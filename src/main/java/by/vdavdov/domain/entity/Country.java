@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 @Entity
 @AllArgsConstructor
@@ -22,7 +23,8 @@ public class Country {
     private Integer id;
 
     @Column(name = "continent")
-    @Enumerated(EnumType.ORDINAL)
+    @Convert
+    @Convert(converter = by.vdavdov.converter.ContinentToInt.class)
     private Continent continent;
 
     @Column(name = "code", nullable = false, length = 3)
@@ -64,7 +66,12 @@ public class Country {
     @Column(name = "head_of_state", length = 60)
     private String headOfState;
 
-    @Column(name = "capital")
+    @JoinColumn(name = "capital")
+    @OneToOne
     private City capital;
+
+    @OneToMany(fetch = FetchType.EAGER)
+    @JoinColumn(name = "country_id")
+    private Set<CountryLanguage> languages;
 
 }
