@@ -3,17 +3,22 @@ package by.vdavdov.app;
 import by.vdavdov.domain.entity.City;
 import by.vdavdov.domain.entity.Country;
 import by.vdavdov.domain.entity.CountryLanguage;
+import by.vdavdov.redis.CityCountry;
+import by.vdavdov.redis.Language;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisStringCommands;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
 import by.vdavdov.dao.*;
 import org.hibernate.cfg.Environment;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
+import java.util.stream.Collectors;
 
 import static java.util.Objects.nonNull;
 
@@ -26,10 +31,30 @@ public class Main {
     private final CityDAO cityDAO;
     private final CountryDAO countryDAO;
 
-
     public static void main(String[] args) {
         Main main = new Main();
         List<City> allCities = main.fetchData(main);
+        List<CityCountry> preparedData = main.transformData(allCities);
+        main.pushToRedis(preparedData);
+
+        //закроем текущую сессию, чтоб точно делать запрос к БД, а не вытянуть данные из кэша
+        main.sessionFactory.getCurrentSession().close();
+
+        //выбираем случайных 10 id городов
+        //так как мы не делали обработку невалидных ситуаций, используй существующие в БД id
+        List<Integer> ids = List.of(3, 2545, 123, 4, 189, 89, 3458, 1189, 10, 102);
+
+        long startRedis = System.currentTimeMillis();
+        main.testRedisData(ids);
+        long stopRedis = System.currentTimeMillis();
+
+        long startMysql = System.currentTimeMillis();
+        main.testMysqlData(ids);
+        long stopMysql = System.currentTimeMillis();
+
+        System.out.printf("%s:\t%d ms\n", "Redis", (stopRedis - startRedis));
+        System.out.printf("%s:\t%d ms\n", "MySQL", (stopMysql - startMysql));
+
         main.shutdown();
     }
 
@@ -43,7 +68,11 @@ public class Main {
     }
 
     private RedisClient prepareRedisClient() {
-        return null; // todo
+        RedisClient redisClient = RedisClient.create(RedisURI.create("localhost", 6379));
+        try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
+            System.out.println("\nConnected to Redis\n");
+        }
+        return redisClient;
     }
 
     private List<City> fetchData(Main main) {
@@ -76,10 +105,12 @@ public class Main {
         final SessionFactory sessionFactory;
         Properties properties = new Properties();
         properties.put(Environment.DIALECT, "org.hibernate.dialect.MySQL8Dialect");
-        properties.put(Environment.DRIVER, "com.p6spy.engine.spy.P6SpyDriver");
-        properties.put(Environment.URL, "jdbc:p6spy:mysql://localhost:3306/world");
-        properties.put(Environment.USER, "root");
-        properties.put(Environment.PASS, "mysql");
+        properties.put(Environment.JAKARTA_JDBC_DRIVER, "com.p6spy.engine.spy.P6SpyDriver");
+        properties.put(Environment.JAKARTA_JDBC_URL, "jdbc:p6spy:mysql://localhost:3306/world");
+//        properties.put(Environment.JAKARTA_JDBC_DRIVER, "com.mysql.cj.jdbc.Driver");
+//        properties.put(Environment.JAKARTA_JDBC_URL, "jdbc:mysql://localhost:3306/world");
+        properties.put(Environment.JAKARTA_JDBC_USER, "root");
+        properties.put(Environment.JAKARTA_JDBC_PASSWORD, "mysql");
         properties.put(Environment.CURRENT_SESSION_CONTEXT_CLASS, "thread");
         properties.put(Environment.HBM2DDL_AUTO, "validate");
         properties.put(Environment.STATEMENT_BATCH_SIZE, "100");
@@ -91,5 +122,73 @@ public class Main {
                 .addProperties(properties)
                 .buildSessionFactory();
         return sessionFactory;
+    }
+
+    private List<CityCountry> transformData(List<City> cities) {
+        return cities.stream().map(city -> {
+            CityCountry res = new CityCountry();
+            res.setId(city.getId());
+            res.setName(city.getName());
+            res.setPopulation(city.getPopulation());
+            res.setDistrict(city.getDistrict());
+
+            Country country = city.getCountry();
+            res.setAlternativeCountryCode(country.getSecondCode());
+            res.setContinent(country.getContinent());
+            res.setCountryCode(country.getCode());
+            res.setCountryName(country.getName());
+            res.setCountryPopulation(country.getPopulation());
+            res.setCountryRegion(country.getRegion());
+            res.setCountrySurfaceArea(country.getSurfaceArea());
+            Collection<CountryLanguage> countryLanguages = country.getLanguages();
+            Set<Language> languages = countryLanguages.stream().map(cl -> {
+                Language language = new Language();
+                language.setLanguage(cl.getLanguage());
+                language.setIsOfficial(cl.getIsOfficial());
+                language.setPercentage(cl.getPercentage());
+                return language;
+            }).collect(Collectors.toSet());
+            res.setLanguages(languages);
+
+            return res;
+        }).collect(Collectors.toList());
+    }
+
+    private void pushToRedis(List<CityCountry> preparedData) {
+        try(StatefulRedisConnection<String, String> connection = redisClient.connect()) {
+            RedisStringCommands<String, String> sync = connection.sync();
+            for (CityCountry country : preparedData) {
+                try {
+                    sync.set(String.valueOf(country.getId()), mapper.writeValueAsString(country));
+                } catch (JsonProcessingException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private void testRedisData(List<Integer> ids) {
+        try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
+            RedisStringCommands<String, String> sync = connection.sync();
+            for (Integer id : ids) {
+                String value = sync.get(String.valueOf(id));
+                try {
+                    mapper.readValue(value, CityCountry.class);
+                } catch (JsonProcessingException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private void testMysqlData(List<Integer> ids) {
+        try (Session session = sessionFactory.getCurrentSession()) {
+            session.beginTransaction();
+            for (Integer id : ids) {
+                City city = session.get(City.class, id);
+                Set<CountryLanguage> languages = city.getCountry().getLanguages();
+            }
+            session.getTransaction().commit();
+        }
     }
 }
