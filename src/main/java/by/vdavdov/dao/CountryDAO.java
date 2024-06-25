@@ -7,7 +7,7 @@ import org.hibernate.query.Query;
 import java.util.List;
 
 public class CountryDAO {
-    private SessionFactory sessionFactory;
+    private final SessionFactory sessionFactory;
 
     public CountryDAO(SessionFactory sessionFactory) {
         this.sessionFactory = sessionFactory;

@@ -76,7 +76,7 @@ public class Main {
     }
 
     private List<City> fetchData(Main main) {
-        try(Session session = main.sessionFactory.getCurrentSession()) {
+        try (Session session = main.sessionFactory.getCurrentSession()) {
             List<City> allCity = new ArrayList<>();
             session.beginTransaction();
 
@@ -101,7 +101,8 @@ public class Main {
         }
     }
 
-    private SessionFactory prepareRelationalDb() {;
+    private SessionFactory prepareRelationalDb() {
+        ;
         final SessionFactory sessionFactory;
         Properties properties = new Properties();
         properties.put(Environment.DIALECT, "org.hibernate.dialect.MySQL8Dialect");
@@ -155,7 +156,7 @@ public class Main {
     }
 
     private void pushToRedis(List<CityCountry> preparedData) {
-        try(StatefulRedisConnection<String, String> connection = redisClient.connect()) {
+        try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
             RedisStringCommands<String, String> sync = connection.sync();
             for (CityCountry country : preparedData) {
                 try {
