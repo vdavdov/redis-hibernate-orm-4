@@ -22,7 +22,8 @@ public class CountryLanguage {
     @Column(name = "language", length = 30)
     private String language;
 
-    @Column(name = "is_official")
+    @Column(name = "is_official", columnDefinition = "BIT")
+    @Convert(converter = org.hibernate.type.NumericBooleanConverter.class)
     private Boolean isOfficial;
 
     @Column(name = "percentage")

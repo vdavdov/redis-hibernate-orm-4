@@ -23,7 +23,6 @@ public class Country {
     private Integer id;
 
     @Column(name = "continent")
-    @Convert
     @Convert(converter = by.vdavdov.converter.ContinentToInt.class)
     private Continent continent;
 
@@ -67,7 +66,7 @@ public class Country {
     private String headOfState;
 
     @JoinColumn(name = "capital")
-    @OneToOne
+    @OneToOne(fetch = FetchType.LAZY)
     private City capital;
 
     @OneToMany(fetch = FetchType.EAGER)
