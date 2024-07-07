@@ -11,9 +11,9 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.util.Set;
 
-@Entity
 @AllArgsConstructor
 @NoArgsConstructor
+@Entity
 @Getter
 @Setter
 @Table(name = "country", schema = "world")
